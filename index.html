@@ -1,8 +1,8 @@
 <!--
-  - @Project: Grand Luxury Tree - Christmas Edition (No Upload Version)
+  - @Project: Grand Luxury Tree - Christmas Music Edition
   - @Author: wp/electronicminer (Modified)
   - @Date: 2025-12-06
-  - @Description: An interactive 3D Christmas tree visualization with gesture control.
+  - @Description: 3D Christmas tree with Loop Music Playback.
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -11,12 +11,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Grand Luxury Tree - Christmas Edition</title>
     <style>
-        /* 修改背景為深色漸變，不再是純黑 */
+        /* 背景設定 */
         body { 
             margin: 0; 
             overflow: hidden; 
             background: radial-gradient(circle at center, #0f2027 0%, #203a43 50%, #2c5364 100%); 
-            background-color: #050d1a; /* Fallback */
+            background-color: #050d1a; 
             font-family: 'Times New Roman', serif; 
         }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
@@ -67,6 +67,35 @@
             transition: opacity 0.5s ease;
         }
 
+        /* 音樂按鈕樣式 */
+        #music-btn {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            pointer-events: auto; /* 允許點擊 */
+            background: rgba(20, 20, 20, 0.6); 
+            border: 1px solid rgba(212, 175, 55, 0.4); 
+            color: #d4af37; 
+            padding: 10px 20px; 
+            cursor: pointer; 
+            text-transform: uppercase; 
+            letter-spacing: 2px; 
+            font-size: 10px;
+            transition: all 0.4s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            border-radius: 2px;
+            z-index: 20;
+            user-select: none;
+        }
+        #music-btn:hover { 
+            background: #d4af37; 
+            color: #000; 
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
+        }
+
         /* Webcam feedback */
         #webcam-wrapper {
             position: absolute; 
@@ -92,17 +121,13 @@
             transform: scaleX(-1); 
         }
 
-        /* Debug info for gestures */
         #debug-info {
             position: absolute;
-            bottom: 5px;
-            left: 5px;
+            bottom: 5px; left: 5px;
             color: rgba(212, 175, 55, 0.8);
-            font-size: 10px;
-            font-family: monospace;
+            font-size: 10px; font-family: monospace;
             background: rgba(0,0,0,0.5);
-            padding: 2px 5px;
-            pointer-events: none;
+            padding: 2px 5px; pointer-events: none;
         }
     </style>
     
@@ -131,13 +156,21 @@
 
     <div id="ui-layer">
         <h1>Merry Christmas</h1>
-        <!-- Controls removed as requested -->
+        <!-- 音樂按鈕 -->
+        <div id="music-btn">🎵 Play Music</div>
     </div>
+
+    <!-- 
+        音效標籤 
+        loop="loop" 屬性確保音樂會一直重複播放
+    -->
+    <audio id="bg-music" loop>
+        <source src="./images/music.mp3" type="audio/mp3">
+    </audio>
 
     <div id="webcam-wrapper">
         <video id="webcam" autoplay playsinline></video>
         <div id="debug-info">Initializing...</div>
-        <canvas id="webcam-preview" style="display:none;"></canvas>
     </div>
 
     <script type="module">
@@ -149,10 +182,10 @@
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
         import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-        // --- 核心配置 ---
+        // --- 設定 ---
         const CONFIG = {
             colors: {
-                bg: 0x050d1a, // 修改：深邃午夜藍 (Midnight Blue)
+                bg: 0x050d1a,
                 fog: 0x050d1a,
                 champagneGold: 0xffd966, 
                 deepGreen: 0x03180a,     
@@ -161,21 +194,14 @@
             particles: {
                 count: 1500,     
                 dustCount: 2000, 
-                snowCount: 1000, // 新增：雪花數量
+                snowCount: 1000,
                 treeHeight: 24,  
                 treeRadius: 8    
             },
             camera: { z: 50 },
-            
             preload: {
                 autoScanLocal: true,
-                scanCount: 200, 
-                images: [
-                    'https://images.unsplash.com/photo-1543589077-47d81606c1bf?q=80&w=600', 
-                    'https://images.unsplash.com/photo-1576919228236-a097c32a5cd4?q=80&w=600',
-                    'https://images.unsplash.com/photo-1512389142860-9c449e58a543?q=80&w=600', 
-                    'https://images.unsplash.com/photo-1482638588057-dce9509db949?q=80&w=600',
-                ]
+                scanCount: 200 
             }
         };
 
@@ -194,17 +220,45 @@
         let photoMeshGroup = new THREE.Group();
         let handLandmarker, video;
         let caneTexture; 
-        let snowSystem; // 新增：雪花系統
+        let snowSystem; 
         const debugInfo = document.getElementById('debug-info');
 
+        // --- 音樂功能 ---
+        function setupMusic() {
+            const music = document.getElementById('bg-music');
+            const btn = document.getElementById('music-btn');
+            let isPlaying = false;
+            
+            // 點擊按鈕切換播放/暫停
+            btn.addEventListener('click', () => {
+                if (isPlaying) {
+                    music.pause();
+                    btn.innerText = "🎵 Play Music";
+                } else {
+                    // 嘗試播放
+                    music.play().then(() => {
+                        btn.innerText = "⏸ Pause Music";
+                    }).catch(e => {
+                        console.warn("Autoplay/Path Error:", e);
+                        // 如果找不到檔案或格式不對，給予提示
+                        btn.innerText = "⚠️ No File";
+                        // 嘗試重新載入 (如果使用者剛才才上傳)
+                        setTimeout(() => { btn.innerText = "🎵 Play Music"; }, 2000);
+                    });
+                }
+                isPlaying = !isPlaying;
+            });
+        }
+
         async function init() {
+            setupMusic(); // 啟動音樂控制
             initThree();
             setupEnvironment(); 
             setupLights();
             createTextures();
             createParticles(); 
             createDust();
-            createSnow(); // 新增：創建雪花
+            createSnow();
             loadPredefinedImages();
             setupPostProcessing();
             setupEvents();
@@ -217,53 +271,22 @@
             animate();
         }
 
-        // --- 增強版圖片加載系統 ---
-        // --- 修改後的圖片加載系統 ---
+        // --- 圖片讀取 (包含您的本地圖片邏輯) ---
         function loadPredefinedImages() {
             const loader = new THREE.TextureLoader();
-            
-            // 1. (選擇性) 如果您有特定的網路圖片想保留，可以放在這裡，不想用就留空陣列 []
-            const onlineImages = [
-                // 'https://images.unsplash.com/photo-1543589077-47d81606c1bf?q=80&w=600', 
-            ];
-
-            onlineImages.forEach(url => {
-                loader.load(url, 
-                    (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); },
-                    undefined,
-                    (e) => { console.log(`Skipped: ${url}`); }
-                );
-            });
-
-            // 2. 自動掃描本地 images 資料夾
-            // 設定您資料夾裡大約有多少張照片，設大一點沒關係 (例如 50)
             const scanCount = 50; 
-            
-            // 設定您的資料夾路徑，請確認是 './images/' 還是 './image/'
             const folderPath = './images/'; 
 
             for (let i = 1; i <= scanCount; i++) {
-                // 嘗試載入各種格式：(1).jpg, (1).png, 1.jpg, 1.png
                 const formats = [
-                    `(${i}).jpg`, // 格式 A: (1).jpg
-                    `(${i}).png`, // 格式 A: (1).png
-                    `${i}.jpg`,   // 格式 B: 1.jpg
-                    `${i}.png`,   // 格式 B: 1.png
-                    `${i}.jpeg`   // 格式 B: 1.jpeg
+                    `(${i}).jpg`, `(${i}).png`,
+                    `${i}.jpg`, `${i}.png`, `${i}.jpeg`
                 ];
 
                 formats.forEach(filename => {
-                    loader.load(
-                        folderPath + filename,
-                        (t) => { 
-                            t.colorSpace = THREE.SRGBColorSpace; 
-                            addPhotoToScene(t); 
-                            // console.log(`Loaded: ${filename}`); //除錯用
-                        },
-                        undefined,
-                        (err) => { 
-                            // 載入失敗通常是因為檔案不存在，這裡是正常的，不用報錯
-                        }
+                    loader.load(folderPath + filename,
+                        (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); },
+                        undefined, () => {}
                     );
                 });
             }
@@ -272,14 +295,12 @@
         function initThree() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
-            // 設置 Three.js 場景背景為深藍色，與 CSS 漸變配合
             scene.background = new THREE.Color(CONFIG.colors.bg);
-            scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.015); // 調整霧氣濃度
+            scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.015);
 
             camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 2, CONFIG.camera.z); 
 
-            // 啟用 alpha: true 以便未來如果有需要可以透過背景
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -297,23 +318,18 @@
         }
 
         function setupLights() {
-            const ambient = new THREE.AmbientLight(0xffffff, 0.6); // 稍微提高環境光
+            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambient);
-
             const innerLight = new THREE.PointLight(0xffaa00, 2, 20);
             innerLight.position.set(0, 5, 0);
             mainGroup.add(innerLight);
-
             const spotGold = new THREE.SpotLight(0xffcc66, 1200);
             spotGold.position.set(30, 40, 40);
-            spotGold.angle = 0.5;
-            spotGold.penumbra = 0.5;
+            spotGold.angle = 0.5; spotGold.penumbra = 0.5;
             scene.add(spotGold);
-
-            const spotBlue = new THREE.SpotLight(0x6688ff, 800); // 增強藍色背光，營造月光感
+            const spotBlue = new THREE.SpotLight(0x6688ff, 800);
             spotBlue.position.set(-30, 20, -30);
             scene.add(spotBlue);
-            
             const fill = new THREE.DirectionalLight(0xffeebb, 0.8);
             fill.position.set(0, 0, 50);
             scene.add(fill);
@@ -322,10 +338,7 @@
         function setupPostProcessing() {
             const renderScene = new RenderPass(scene, camera);
             const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = 0.65; // 稍微降低閾值讓更多東西發光
-            bloomPass.strength = 0.5; 
-            bloomPass.radius = 0.4;
-
+            bloomPass.threshold = 0.65; bloomPass.strength = 0.5; bloomPass.radius = 0.4;
             composer = new EffectComposer(renderer);
             composer.addPass(renderScene);
             composer.addPass(bloomPass);
@@ -335,35 +348,22 @@
             const canvas = document.createElement('canvas');
             canvas.width = 128; canvas.height = 128;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0,0,128,128);
-            ctx.fillStyle = '#880000'; 
-            ctx.beginPath();
-            for(let i=-128; i<256; i+=32) {
-                ctx.moveTo(i, 0); ctx.lineTo(i+32, 128); ctx.lineTo(i+16, 128); ctx.lineTo(i-16, 0);
-            }
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,128,128);
+            ctx.fillStyle = '#880000'; ctx.beginPath();
+            for(let i=-128; i<256; i+=32) { ctx.moveTo(i, 0); ctx.lineTo(i+32, 128); ctx.lineTo(i+16, 128); ctx.lineTo(i-16, 0); }
             ctx.fill();
             caneTexture = new THREE.CanvasTexture(canvas);
-            caneTexture.wrapS = THREE.RepeatWrapping;
-            caneTexture.wrapT = THREE.RepeatWrapping;
-            caneTexture.repeat.set(3, 3);
+            caneTexture.wrapS = THREE.RepeatWrapping; caneTexture.wrapT = THREE.RepeatWrapping; caneTexture.repeat.set(3, 3);
         }
 
-        // --- 新增：雪花系統 ---
         function createSnow() {
             const geometry = new THREE.BufferGeometry();
-            const vertices = [];
-            const velocities = [];
-
+            const vertices = []; const velocities = [];
             const loader = new THREE.TextureLoader();
-            // 創建一個簡單的圓形紋理作為雪花
             const canvas = document.createElement('canvas');
             canvas.width = 32; canvas.height = 32;
             const context = canvas.getContext('2d');
-            context.fillStyle = 'white';
-            context.beginPath();
-            context.arc(16, 16, 16, 0, Math.PI * 2);
-            context.fill();
+            context.fillStyle = 'white'; context.beginPath(); context.arc(16, 16, 16, 0, Math.PI * 2); context.fill();
             const snowTexture = new THREE.CanvasTexture(canvas);
 
             for (let i = 0; i < CONFIG.particles.snowCount; i++) {
@@ -371,27 +371,13 @@
                 const y = THREE.MathUtils.randFloatSpread(60);
                 const z = THREE.MathUtils.randFloatSpread(60);
                 vertices.push(x, y, z);
-                
-                // 存儲每個雪花的速度和擺動參數
-                velocities.push(
-                    Math.random() * 0.2 + 0.1, // fall speed
-                    Math.random() * 0.05       // sway speed
-                );
+                velocities.push(Math.random() * 0.2 + 0.1, Math.random() * 0.05);
             }
-
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
             geometry.setAttribute('userData', new THREE.Float32BufferAttribute(velocities, 2));
-
             const material = new THREE.PointsMaterial({
-                color: 0xffffff,
-                size: 0.4,
-                map: snowTexture,
-                transparent: true,
-                opacity: 0.8,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
+                color: 0xffffff, size: 0.4, map: snowTexture, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false
             });
-
             const snow = new THREE.Points(geometry, material);
             scene.add(snow);
             snowSystem = snow;
@@ -399,20 +385,13 @@
 
         function updateSnow() {
             if (!snowSystem) return;
-            
             const positions = snowSystem.geometry.attributes.position.array;
             const userData = snowSystem.geometry.attributes.userData.array;
-
             for (let i = 0; i < CONFIG.particles.snowCount; i++) {
-                // Y軸下落
                 const fallSpeed = userData[i * 2];
                 positions[i * 3 + 1] -= fallSpeed;
-
-                // X軸搖擺
                 const swaySpeed = userData[i * 2 + 1];
                 positions[i * 3] += Math.sin(clock.elapsedTime * 2 + i) * swaySpeed * 0.1;
-
-                // 循環重置
                 if (positions[i * 3 + 1] < -30) {
                     positions[i * 3 + 1] = 30;
                     positions[i * 3] = THREE.MathUtils.randFloatSpread(100);
@@ -424,441 +403,169 @@
 
         class Particle {
             constructor(mesh, type, isDust = false) {
-                this.mesh = mesh;
-                this.type = type;
-                this.isDust = isDust;
-                
-                this.posTree = new THREE.Vector3();
-                this.posScatter = new THREE.Vector3();
+                this.mesh = mesh; this.type = type; this.isDust = isDust;
+                this.posTree = new THREE.Vector3(); this.posScatter = new THREE.Vector3();
                 this.baseScale = mesh.scale.x; 
-
                 const speedMult = (type === 'PHOTO') ? 0.3 : 2.0;
-
-                this.spinSpeed = new THREE.Vector3(
-                    (Math.random() - 0.5) * speedMult,
-                    (Math.random() - 0.5) * speedMult,
-                    (Math.random() - 0.5) * speedMult
-                );
-
+                this.spinSpeed = new THREE.Vector3((Math.random() - 0.5) * speedMult, (Math.random() - 0.5) * speedMult, (Math.random() - 0.5) * speedMult);
                 this.calculatePositions();
             }
-
             calculatePositions() {
                 if (this.type === 'PHOTO') {
                     this.posTree.set(0, 0, 0); 
-                    const rScatter = 8 + Math.random()*12;
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.acos(2 * Math.random() - 1);
-                    this.posScatter.set(
-                        rScatter * Math.sin(phi) * Math.cos(theta),
-                        rScatter * Math.sin(phi) * Math.sin(theta),
-                        rScatter * Math.cos(phi)
-                    );
+                    const rScatter = 8 + Math.random()*12; const theta = Math.random() * Math.PI * 2; const phi = Math.acos(2 * Math.random() - 1);
+                    this.posScatter.set(rScatter * Math.sin(phi) * Math.cos(theta), rScatter * Math.sin(phi) * Math.sin(theta), rScatter * Math.cos(phi));
                     return;
                 }
-
-                const h = CONFIG.particles.treeHeight;
-                const halfH = h / 2;
-                let t = Math.random(); 
-                t = Math.pow(t, 0.8); 
-                const y = (t * h) - halfH;
-                
-                let rMax = CONFIG.particles.treeRadius * (1.0 - t); 
-                if (rMax < 0.5) rMax = 0.5;
-
-                const angle = t * 50 * Math.PI + Math.random() * Math.PI; 
-                const r = rMax * (0.8 + Math.random() * 0.4); 
+                const h = CONFIG.particles.treeHeight; const halfH = h / 2;
+                let t = Math.random(); t = Math.pow(t, 0.8); const y = (t * h) - halfH;
+                let rMax = CONFIG.particles.treeRadius * (1.0 - t); if (rMax < 0.5) rMax = 0.5;
+                const angle = t * 50 * Math.PI + Math.random() * Math.PI; const r = rMax * (0.8 + Math.random() * 0.4); 
                 this.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
-
                 let rScatter = this.isDust ? (12 + Math.random()*20) : (8 + Math.random()*12);
-                const theta = Math.random() * Math.PI * 2;
-                const phi = Math.acos(2 * Math.random() - 1);
-                this.posScatter.set(
-                    rScatter * Math.sin(phi) * Math.cos(theta),
-                    rScatter * Math.sin(phi) * Math.sin(theta),
-                    rScatter * Math.cos(phi)
-                );
+                const theta = Math.random() * Math.PI * 2; const phi = Math.acos(2 * Math.random() - 1);
+                this.posScatter.set(rScatter * Math.sin(phi) * Math.cos(theta), rScatter * Math.sin(phi) * Math.sin(theta), rScatter * Math.cos(phi));
             }
-
             update(dt, mode, focusTargetMesh) {
                 let target = this.posTree;
-                
                 if (mode === 'SCATTER') target = this.posScatter;
                 else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) {
-                        const desiredWorldPos = new THREE.Vector3(0, 2, 35);
-                        const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
+                        const desiredWorldPos = new THREE.Vector3(0, 2, 35); const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
                         target = desiredWorldPos.applyMatrix4(invMatrix);
-                    } else {
-                        target = this.posScatter;
-                    }
+                    } else target = this.posScatter;
                 }
-
                 const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0; 
                 this.mesh.position.lerp(target, lerpSpeed * dt);
-
                 if (mode === 'SCATTER') {
-                    this.mesh.rotation.x += this.spinSpeed.x * dt;
-                    this.mesh.rotation.y += this.spinSpeed.y * dt;
-                    this.mesh.rotation.z += this.spinSpeed.z * dt; 
+                    this.mesh.rotation.x += this.spinSpeed.x * dt; this.mesh.rotation.y += this.spinSpeed.y * dt; this.mesh.rotation.z += this.spinSpeed.z * dt; 
                 } else if (mode === 'TREE') {
-                    if (this.type === 'PHOTO') {
-                        this.mesh.lookAt(0, this.mesh.position.y, 0);
-                        this.mesh.rotateY(Math.PI);
-                    } else {
-                        this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
-                        this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
-                        this.mesh.rotation.y += 0.5 * dt; 
-                    }
+                    if (this.type === 'PHOTO') { this.mesh.lookAt(0, this.mesh.position.y, 0); this.mesh.rotateY(Math.PI); }
+                    else { this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt); this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt); this.mesh.rotation.y += 0.5 * dt; }
                 }
-                
-                if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
-                    this.mesh.lookAt(camera.position); 
-                }
-
+                if (mode === 'FOCUS' && this.mesh === focusTargetMesh) this.mesh.lookAt(camera.position); 
                 let s = this.baseScale;
-                if (this.isDust) {
-                    s = this.baseScale * (0.8 + 0.4 * Math.sin(clock.elapsedTime * 4 + this.mesh.id));
-                    if (mode === 'TREE') s = 0; 
-                } else if (mode === 'SCATTER' && this.type === 'PHOTO') {
-                    s = this.baseScale * 2.5; 
-                } else if (mode === 'FOCUS') {
-                    if (this.mesh === focusTargetMesh) s = 4.5; 
-                    else s = this.baseScale * 0.8; 
-                }
-                
+                if (this.isDust) { s = this.baseScale * (0.8 + 0.4 * Math.sin(clock.elapsedTime * 4 + this.mesh.id)); if (mode === 'TREE') s = 0; }
+                else if (mode === 'SCATTER' && this.type === 'PHOTO') s = this.baseScale * 2.5; 
+                else if (mode === 'FOCUS') { if (this.mesh === focusTargetMesh) s = 4.5; else s = this.baseScale * 0.8; }
                 this.mesh.scale.lerp(new THREE.Vector3(s,s,s), 4*dt);
             }
         }
 
         function updatePhotoLayout() {
-            const photos = particleSystem.filter(p => p.type === 'PHOTO');
-            const count = photos.length;
-            if (count === 0) return;
-
-            const h = CONFIG.particles.treeHeight * 0.9;
-            const bottomY = -h/2;
-            const stepY = h / count;
-            const loops = 3;
-
+            const photos = particleSystem.filter(p => p.type === 'PHOTO'); const count = photos.length; if (count === 0) return;
+            const h = CONFIG.particles.treeHeight * 0.9; const bottomY = -h/2; const stepY = h / count; const loops = 3;
             photos.forEach((p, i) => {
-                const y = bottomY + stepY * i + stepY/2;
-                const fullH = CONFIG.particles.treeHeight;
-                const normalizedH = (y + fullH/2) / fullH; 
-
-                let rMax = CONFIG.particles.treeRadius * (1.0 - normalizedH);
-                if (rMax < 1.0) rMax = 1.0;
-                
-                const r = rMax + 3.0; 
-                const angle = normalizedH * Math.PI * 2 * loops + (Math.PI/4); 
-
+                const y = bottomY + stepY * i + stepY/2; const fullH = CONFIG.particles.treeHeight; const normalizedH = (y + fullH/2) / fullH; 
+                let rMax = CONFIG.particles.treeRadius * (1.0 - normalizedH); if (rMax < 1.0) rMax = 1.0;
+                const r = rMax + 3.0; const angle = normalizedH * Math.PI * 2 * loops + (Math.PI/4); 
                 p.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
             });
         }
 
         function createParticles() {
-            const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); 
-            const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
-            const curve = new THREE.CatmullRomCurve3([
-                new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.3, 0),
-                new THREE.Vector3(0.1, 0.5, 0), new THREE.Vector3(0.3, 0.4, 0)
-            ]);
+            const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
+            const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.3, 0), new THREE.Vector3(0.1, 0.5, 0), new THREE.Vector3(0.3, 0.4, 0)]);
             const candyGeo = new THREE.TubeGeometry(curve, 16, 0.08, 8, false);
-
-            const goldMat = new THREE.MeshStandardMaterial({
-                color: CONFIG.colors.champagneGold,
-                metalness: 1.0, roughness: 0.1,
-                envMapIntensity: 2.0, 
-                emissive: 0x443300,   
-                emissiveIntensity: 0.3
-            });
-
-            const greenMat = new THREE.MeshStandardMaterial({
-                color: CONFIG.colors.deepGreen,
-                metalness: 0.2, roughness: 0.8,
-                emissive: 0x002200,
-                emissiveIntensity: 0.2 
-            });
-
-            const redMat = new THREE.MeshPhysicalMaterial({
-                color: CONFIG.colors.accentRed,
-                metalness: 0.3, roughness: 0.2, clearcoat: 1.0,
-                emissive: 0x330000
-            });
-            
+            const goldMat = new THREE.MeshStandardMaterial({ color: CONFIG.colors.champagneGold, metalness: 1.0, roughness: 0.1, envMapIntensity: 2.0, emissive: 0x443300, emissiveIntensity: 0.3 });
+            const greenMat = new THREE.MeshStandardMaterial({ color: CONFIG.colors.deepGreen, metalness: 0.2, roughness: 0.8, emissive: 0x002200, emissiveIntensity: 0.2 });
+            const redMat = new THREE.MeshPhysicalMaterial({ color: CONFIG.colors.accentRed, metalness: 0.3, roughness: 0.2, clearcoat: 1.0, emissive: 0x330000 });
             const candyMat = new THREE.MeshStandardMaterial({ map: caneTexture, roughness: 0.4 });
 
             for (let i = 0; i < CONFIG.particles.count; i++) {
-                const rand = Math.random();
-                let mesh, type;
-                
-                if (rand < 0.40) {
-                    mesh = new THREE.Mesh(boxGeo, greenMat);
-                    type = 'BOX';
-                } else if (rand < 0.70) {
-                    mesh = new THREE.Mesh(boxGeo, goldMat);
-                    type = 'GOLD_BOX';
-                } else if (rand < 0.92) {
-                    mesh = new THREE.Mesh(sphereGeo, goldMat);
-                    type = 'GOLD_SPHERE';
-                } else if (rand < 0.97) {
-                    mesh = new THREE.Mesh(sphereGeo, redMat);
-                    type = 'RED';
-                } else {
-                    mesh = new THREE.Mesh(candyGeo, candyMat);
-                    type = 'CANE';
-                }
-
-                const s = 0.4 + Math.random() * 0.5;
-                mesh.scale.set(s,s,s);
-                mesh.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
-                
-                mainGroup.add(mesh);
-                particleSystem.push(new Particle(mesh, type, false));
+                const rand = Math.random(); let mesh, type;
+                if (rand < 0.40) { mesh = new THREE.Mesh(boxGeo, greenMat); type = 'BOX'; } 
+                else if (rand < 0.70) { mesh = new THREE.Mesh(boxGeo, goldMat); type = 'GOLD_BOX'; } 
+                else if (rand < 0.92) { mesh = new THREE.Mesh(sphereGeo, goldMat); type = 'GOLD_SPHERE'; } 
+                else if (rand < 0.97) { mesh = new THREE.Mesh(sphereGeo, redMat); type = 'RED'; } 
+                else { mesh = new THREE.Mesh(candyGeo, candyMat); type = 'CANE'; }
+                const s = 0.4 + Math.random() * 0.5; mesh.scale.set(s,s,s); mesh.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
+                mainGroup.add(mesh); particleSystem.push(new Particle(mesh, type, false));
             }
-
-            // Star
-            const starShape = new THREE.Shape();
-            const points = 5;
-            const outerRadius = 1.5;
-            const innerRadius = 0.7; 
-            
-            for (let i = 0; i < points * 2; i++) {
-                const angle = (i * Math.PI) / points + Math.PI / 2;
-                const r = (i % 2 === 0) ? outerRadius : innerRadius;
-                const x = Math.cos(angle) * r;
-                const y = Math.sin(angle) * r;
-                if (i === 0) starShape.moveTo(x, y);
-                else starShape.lineTo(x, y);
-            }
+            const starShape = new THREE.Shape(); const points = 5;
+            for (let i = 0; i < points * 2; i++) { const angle = (i * Math.PI) / points + Math.PI / 2; const r = (i % 2 === 0) ? 1.5 : 0.7; if (i === 0) starShape.moveTo(Math.cos(angle) * r, Math.sin(angle) * r); else starShape.lineTo(Math.cos(angle) * r, Math.sin(angle) * r); }
             starShape.closePath();
-
-            const starGeo = new THREE.ExtrudeGeometry(starShape, {
-                depth: 0.4,
-                bevelEnabled: true,
-                bevelThickness: 0.1,
-                bevelSize: 0.1,
-                bevelSegments: 2
-            });
+            const starGeo = new THREE.ExtrudeGeometry(starShape, { depth: 0.4, bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.1, bevelSegments: 2 });
             starGeo.center(); 
-
-            const starMat = new THREE.MeshStandardMaterial({
-                color: 0xffdd88, emissive: 0xffaa00, emissiveIntensity: 1.0,
-                metalness: 1.0, roughness: 0
-            });
-            const star = new THREE.Mesh(starGeo, starMat);
-            star.position.set(0, CONFIG.particles.treeHeight/2 + 1.2, 0);
-            mainGroup.add(star);
-            
-            mainGroup.add(photoMeshGroup);
+            const starMat = new THREE.MeshStandardMaterial({ color: 0xffdd88, emissive: 0xffaa00, emissiveIntensity: 1.0, metalness: 1.0, roughness: 0 });
+            const star = new THREE.Mesh(starGeo, starMat); star.position.set(0, CONFIG.particles.treeHeight/2 + 1.2, 0); mainGroup.add(star); mainGroup.add(photoMeshGroup);
         }
 
         function createDust() {
-            const geo = new THREE.TetrahedronGeometry(0.08, 0);
-            const mat = new THREE.MeshBasicMaterial({ color: 0xffeebb, transparent: true, opacity: 0.8 });
-            
-            for(let i=0; i<CONFIG.particles.dustCount; i++) {
-                 const mesh = new THREE.Mesh(geo, mat);
-                 mesh.scale.setScalar(0.5 + Math.random());
-                 mainGroup.add(mesh);
-                 particleSystem.push(new Particle(mesh, 'DUST', true));
-            }
+            const geo = new THREE.TetrahedronGeometry(0.08, 0); const mat = new THREE.MeshBasicMaterial({ color: 0xffeebb, transparent: true, opacity: 0.8 });
+            for(let i=0; i<CONFIG.particles.dustCount; i++) { const mesh = new THREE.Mesh(geo, mat); mesh.scale.setScalar(0.5 + Math.random()); mainGroup.add(mesh); particleSystem.push(new Particle(mesh, 'DUST', true)); }
         }
 
         function addPhotoToScene(texture) {
-            const frameGeo = new THREE.BoxGeometry(1.4, 1.4, 0.05);
-            const frameMat = new THREE.MeshStandardMaterial({ color: CONFIG.colors.champagneGold, metalness: 1.0, roughness: 0.1 });
+            const frameGeo = new THREE.BoxGeometry(1.4, 1.4, 0.05); const frameMat = new THREE.MeshStandardMaterial({ color: CONFIG.colors.champagneGold, metalness: 1.0, roughness: 0.1 });
             const frame = new THREE.Mesh(frameGeo, frameMat);
-
-            let width = 1.2;
-            let height = 1.2;
-            
-            if (texture.image) {
-                const aspect = texture.image.width / texture.image.height;
-                if (aspect > 1) {
-                    height = width / aspect;
-                } else {
-                    width = height * aspect;
-                }
-            }
-
-            const photoGeo = new THREE.PlaneGeometry(width, height);
-            const photoMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
-            const photo = new THREE.Mesh(photoGeo, photoMat);
-            photo.position.z = 0.04;
-
-            const group = new THREE.Group();
-            group.add(frame);
-            group.add(photo);
-            
-            frame.scale.set(width/1.2, height/1.2, 1);
-
-            const s = 0.8;
-            group.scale.set(s,s,s);
-            
-            photoMeshGroup.add(group);
-            particleSystem.push(new Particle(group, 'PHOTO', false));
-
-            updatePhotoLayout();
+            let width = 1.2, height = 1.2;
+            if (texture.image) { const aspect = texture.image.width / texture.image.height; if (aspect > 1) height = width / aspect; else width = height * aspect; }
+            const photoGeo = new THREE.PlaneGeometry(width, height); const photoMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            const photo = new THREE.Mesh(photoGeo, photoMat); photo.position.z = 0.04;
+            const group = new THREE.Group(); group.add(frame); group.add(photo); frame.scale.set(width/1.2, height/1.2, 1); group.scale.set(0.8, 0.8, 0.8);
+            photoMeshGroup.add(group); particleSystem.push(new Particle(group, 'PHOTO', false)); updatePhotoLayout();
         }
 
-        // --- MEDIAPIPE (Adaptive Fix) ---
         async function initMediaPipe() {
             video = document.getElementById('webcam');
-            
-            // Adjust to get best available resolution if possible
-            const constraints = {
-                video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    frameRate: { ideal: 30 }
-                }
-            };
-
-            const vision = await FilesetResolver.forVisionTasks(
-                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-            );
+            const constraints = { video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } } };
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                    delegate: "GPU"
-                },
-                runningMode: "VIDEO",
-                numHands: 1
+                baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`, delegate: "GPU" },
+                runningMode: "VIDEO", numHands: 1
             });
-            
             if (navigator.mediaDevices?.getUserMedia) {
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                    video.srcObject = stream;
-                    video.addEventListener("loadeddata", predictWebcam);
-                    debugInfo.innerText = "Webcam active. Show hand.";
-                } catch(e) {
-                    console.warn("Webcam access denied or not available", e);
-                    debugInfo.innerText = "Camera error: " + e.message;
-                    document.getElementById('webcam-wrapper').style.display = 'none';
-                }
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints); video.srcObject = stream; video.addEventListener("loadeddata", predictWebcam); debugInfo.innerText = "Webcam active. Show hand.";
+                } catch(e) { console.warn("Webcam access denied", e); debugInfo.innerText = "Camera error: " + e.message; document.getElementById('webcam-wrapper').style.display = 'none'; }
             }
         }
-
         let lastVideoTime = -1;
         async function predictWebcam() {
-            if (video.currentTime !== lastVideoTime) {
-                lastVideoTime = video.currentTime;
-                if (handLandmarker) {
-                    const result = handLandmarker.detectForVideo(video, performance.now());
-                    processGestures(result);
-                }
-            }
+            if (video.currentTime !== lastVideoTime) { lastVideoTime = video.currentTime; if (handLandmarker) { const result = handLandmarker.detectForVideo(video, performance.now()); processGestures(result); } }
             requestAnimationFrame(predictWebcam);
         }
-
-        // 修復核心：使用相對比例而非絕對距離
         function processGestures(result) {
             if (result.landmarks && result.landmarks.length > 0) {
-                STATE.hand.detected = true;
-                const lm = result.landmarks[0];
-                STATE.hand.x = (lm[9].x - 0.5) * 2; 
-                STATE.hand.y = (lm[9].y - 0.5) * 2;
-
-                const thumb = lm[4]; 
-                const index = lm[8]; 
-                const wrist = lm[0];
-                const middleMCP = lm[9]; // 中指指根 (Knuckle)
-
-                // 1. 計算手掌基準大小 (手腕到中指指根的距離)
-                const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
-                if (handSize < 0.02) return;
-
-                // 2. 計算手指尖端的平均伸展距離
-                const tips = [lm[8], lm[12], lm[16], lm[20]];
-                let avgTipDist = 0;
-                tips.forEach(t => avgTipDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
-                avgTipDist /= 4;
-
-                // 3. 計算捏合距離 (拇指到食指)
+                STATE.hand.detected = true; const lm = result.landmarks[0]; STATE.hand.x = (lm[9].x - 0.5) * 2; STATE.hand.y = (lm[9].y - 0.5) * 2;
+                const thumb = lm[4], index = lm[8], wrist = lm[0], middleMCP = lm[9];
+                const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y); if (handSize < 0.02) return;
+                const tips = [lm[8], lm[12], lm[16], lm[20]]; let avgTipDist = 0; tips.forEach(t => avgTipDist += Math.hypot(t.x - wrist.x, t.y - wrist.y)); avgTipDist /= 4;
                 const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-
-                // 4. 計算相對比例
-                const extensionRatio = avgTipDist / handSize;
-                const pinchRatio = pinchDist / handSize;
-
-                // 調試顯示
+                const extensionRatio = avgTipDist / handSize; const pinchRatio = pinchDist / handSize;
                 debugInfo.innerText = `Size: ${handSize.toFixed(2)} | Ext: ${extensionRatio.toFixed(2)} | Pinch: ${pinchRatio.toFixed(2)} | Mode: ${STATE.mode}`;
-
-                // 5. 狀態判定優化
-                // 優先檢查握拳 (Tree)，防止因為大拇指靠近食指而被誤判為 Focus
-                if (extensionRatio < 1.5) {
-                    // 握拳：變成樹 (閾值從 1.4 提高到 1.5，更容易觸發)
-                    STATE.mode = 'TREE';
-                    STATE.focusTarget = null;
-                } else if (pinchRatio < 0.35) {
-                    // 捏合：進入聚焦模式 (僅當沒有握拳時才檢查)
-                    if (STATE.mode !== 'FOCUS') {
-                        STATE.mode = 'FOCUS';
-                        const photos = particleSystem.filter(p => p.type === 'PHOTO');
-                        if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random()*photos.length)].mesh;
-                    }
-                } else if (extensionRatio > 1.7) {
-                    // 張開：散開照片
-                    STATE.mode = 'SCATTER';
-                    STATE.focusTarget = null;
-                }
-            } else {
-                STATE.hand.detected = false;
-                debugInfo.innerText = "No hand detected";
-            }
+                if (extensionRatio < 1.5) { STATE.mode = 'TREE'; STATE.focusTarget = null; } 
+                else if (pinchRatio < 0.35) { if (STATE.mode !== 'FOCUS') { STATE.mode = 'FOCUS'; const photos = particleSystem.filter(p => p.type === 'PHOTO'); if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random()*photos.length)].mesh; } } 
+                else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
+            } else { STATE.hand.detected = false; debugInfo.innerText = "No hand detected"; }
         }
 
         function setupEvents() {
             window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                composer.setSize(window.innerWidth, window.innerHeight);
+                camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight);
             });
-            
-            // 已移除檔案上傳監聽事件
-
             window.addEventListener('keydown', (e) => {
                 if (e.key.toLowerCase() === 'h') {
-                    // UI 層按鍵切換邏輯
-                    const webcam = document.getElementById('webcam-wrapper');
-                    if(webcam) webcam.classList.toggle('ui-hidden');
+                    const webcam = document.getElementById('webcam-wrapper'); const musicBtn = document.getElementById('music-btn');
+                    if(webcam) webcam.classList.toggle('ui-hidden'); if(musicBtn) musicBtn.classList.toggle('ui-hidden');
                 }
             });
         }
 
         function animate() {
-            requestAnimationFrame(animate);
-            const dt = clock.getDelta();
-
-            // Rotation Logic
+            requestAnimationFrame(animate); const dt = clock.getDelta();
             if (STATE.mode === 'SCATTER' && STATE.hand.detected) {
-                const targetRotY = STATE.hand.x * Math.PI * 0.9; 
-                const targetRotX = STATE.hand.y * Math.PI * 0.25;
-                STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
-                STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+                const targetRotY = STATE.hand.x * Math.PI * 0.9; const targetRotX = STATE.hand.y * Math.PI * 0.25;
+                STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt; STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
             } else {
-                if(STATE.mode === 'TREE') {
-                    STATE.rotation.y += 0.3 * dt;
-                    STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
-                } else {
-                      STATE.rotation.y += 0.1 * dt; 
-                }
+                if(STATE.mode === 'TREE') { STATE.rotation.y += 0.3 * dt; STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt; } 
+                else { STATE.rotation.y += 0.1 * dt; }
             }
-
-            mainGroup.rotation.y = STATE.rotation.y;
-            mainGroup.rotation.x = STATE.rotation.x;
-
+            mainGroup.rotation.y = STATE.rotation.y; mainGroup.rotation.x = STATE.rotation.x;
             particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
-            
-            // 更新雪花
-            updateSnow();
-
-            composer.render();
+            updateSnow(); composer.render();
         }
-
         init();
     </script>
 </body>
